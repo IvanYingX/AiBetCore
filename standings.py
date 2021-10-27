@@ -1,9 +1,32 @@
+#%%
 from tqdm import tqdm
 import glob
 import numpy as np
 import pandas as pd
+import os
+import pickle
+from translate_streaks import points_calculator
+from translate_streaks import streak_points
+#%%
+filename = 'elo_dict.pkl'
+with open(filename, 'rb') as f:
+    match_dict = pickle.load(f)
 
 
+UMLAUTS = {'Ã€': 'À', 'Ã‚': 'Â', 'Ã„': 'Ä',
+           'Ã…': 'Å', 'Ã†': 'Æ', 'Ã‡': 'Ç', 'Ãˆ': 'È', 'Ã‰': 'É',
+           'ÃŠ': 'Ê', 'Ã‹': 'Ë', 'ÃŒ': 'Ì', 'ÃŽ': 'Î',
+           'Ã‘': 'Ñ', 'Ã’': 'Ò', 'Ã“': 'Ó',
+           'Ã”': 'Ô', 'Ã•': 'Õ', 'Ã–': 'Ö', 'Ã—': '×', 'Ã˜': 'Ø',
+           'Ã™': 'Ù', 'Ãš': 'Ú', 'Ã›': 'Û', 'Ãœ': 'Ü',
+           'Ãž': 'Þ', 'ÃŸ': 'ß', 'Ã ': 'à', 'Ã¡': 'á', 'Ã¢': 'â',
+           'Ã£': 'ã', 'Ã¤': 'ä', 'Ã¥': 'å', 'Ã¦': 'æ', 'Ã§': 'ç',
+           'Ã¨': 'è', 'Ã©': 'é', 'Ãª': 'ê', 'Ã«': 'ë', 'Ã¬': 'ì',
+           'Ã®': 'î', 'Ã¯': 'ï', 'Ã°': 'ð', 'Ã±': 'ñ',
+           'Ã²': 'ò', 'Ã³': 'ó', 'Ã´': 'ô', 'Ãµ': 'õ', 'Ã¶': 'ö',
+           'Ã·': '÷', 'Ã¸': 'ø', 'Ã¹': 'ù', 'Ãº': 'ú', 'Ã»': 'û',
+           'Ã¼': 'ü', 'Ã½': 'ý', 'Ã¾': 'þ', 'Ã¿': 'ÿ'}
+#%%
 def clean_result(x):
     '''
     In some cases, the result will have special characters. By now, let's just remove them
@@ -44,10 +67,18 @@ def get_result(x):
     else:
         return None, None, None
 
+
+
+def clean_names(x):
+    if any(map(x.__contains__, UMLAUTS.keys())):
+        for word, initial in UMLAUTS.items():
+            x = x.replace(word, initial)
+    return x
+
 def get_standings(df):
     # We need to clean the names
-    # df.loc[:, 'Home_Team'] = df['Home_Team'].map(clean_names)
-    # df.loc[:, 'Away_Team'] = df['Away_Team'].map(clean_names)
+    df.loc[:, 'Home_Team'] = df['Home_Team'].map(clean_names)
+    df.loc[:, 'Away_Team'] = df['Away_Team'].map(clean_names)
     teams = list(set(df['Home_Team'].unique())
                  | set(df['Away_Team'].unique()))
     df['Number_Teams'] = len(teams)
@@ -348,9 +379,46 @@ def get_standings(df):
     return df
 
 
+def elo_data(x):
+    match_list = match_dict[x]
+    return match_list['Elo_home'], match_list['Elo_away']
+
+
+def clean_database():
+    leagues = [x.split('/')[-1] for x in glob.glob('./Data/Results/*')]
+    for league in leagues:
+        os.makedirs(f"./Data/Results_Cleaned/{league}", exist_ok=True)
+        seasons = glob.glob(f'./Data/Results/{league}/*')
+        seasons.sort()
+        for season in seasons:
+            # Load the data
+            df = pd.read_csv(season)
+            if len(df) == 0:
+                print(f'No available data for season {season} of {league}')
+                continue
+            filename = f'./Data/Results_Cleaned/{league}/Cleaned_{df.loc[0]["Season"]}' \
+                        + f'_{df.loc[0]["League"]}.csv'
+            df = get_standings(df)
+            df['Elo_Home'], df['Elo_Away'] = zip(*df['Link'].map(elo_data))
+
+            df['Streak_When_Home'] = df['Streak_When_Home'].astype(str)
+            df['Streak_When_Home'] = df['Streak_When_Home'].apply(streak_points)
+            df['Streak_When_Home'] = df['Streak_When_Home'].apply(points_calculator)
+
+
+            df['Streak_When_Away'] = df['Streak_When_Away'].astype(str)
+            df['Streak_When_Away'] = df['Streak_When_Away'].apply(streak_points)
+            df['Streak_When_Away'] = df['Streak_When_Away'].apply(points_calculator)
+
+            df['Total_Streak_Home'] = df['Total_Streak_Home'].astype(str)
+            df['Total_Streak_Home'] = df['Total_Streak_Home'].apply(streak_points)
+            df['Total_Streak_Home'] = df['Total_Streak_Home'].apply(points_calculator)
+
+            df['Total_Streak_Away'] = df['Total_Streak_Away'].astype(str)
+            df['Total_Streak_Away'] = df['Total_Streak_Away'].apply(streak_points)
+            df['Total_Streak_Away'] = df['Total_Streak_Away'].apply(points_calculator)
+            df.to_csv(filename, index=False)
+
+
 if __name__ == '__main__':
-    file = 'Football_Data/Results/2_liga/Results_1990_2_liga.csv'
-    df = pd.read_csv(file)
-    clean_df = get_standings(df)
-    print(clean_df)
-    
+    clean_database()
