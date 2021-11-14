@@ -90,4 +90,4 @@ def create_database(year_1, year_2, leagues):
 
 
 if __name__ == '__main__':
-    create_database(2018, 2020, 'premier_league')
+    create_database(2022, 2022, 'bundesliga')
